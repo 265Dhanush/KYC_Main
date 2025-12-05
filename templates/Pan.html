@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PAN Verification</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    body {
+      background: #f4f6fa;
+    }
+
+    .photo-box {
+      width: 150px;
+      height: 180px;
+      background: #e1e1e1;
+      border: 2px dashed #aaa;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 10px;
+    }
+
+    .blocked {
+      pointer-events: none;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+
+<body>
+
+  <nav class="navbar navbar-dark bg-dark px-4">
+    <a class="navbar-brand" href="#">PAN Verification</a>
+    <form class="d-flex" id="uploadForm">
+      <input class="form-control form-control-sm me-2" type="file" id="imgUpload" required>
+      <button class="btn btn-outline-light btn-sm" type="submit">Upload</button>
+    </form>
+  </nav>
+
+  <div class="container mt-4">
+
+    <div class="card shadow p-4">
+      <h4 class="mb-3">Data From Image</h4>
+
+      <div class="row">
+
+        <div class="col-md-3 text-center">
+          <div class="photo-box" id="photoPreview">Photo</div>
+        </div>
+
+        <div class="col-md-9">
+          <form id="regForm" class="blocked">
+
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <label class="form-label">Name</label>
+                <input type="text" class="form-control" id="name" disabled>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Date of Birth</label>
+                <input type="text" class="form-control" id="dob" disabled>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Father's Name</label>
+                <input type="text" class="form-control" id="father" disabled>
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-6">
+                <label class="form-label">PAN No.</label>
+                <input type="text" class="form-control" id="pan" disabled>
+              </div>
+              </div>
+              
+          </form>
+        </div>
+      </div>
+
+      <div class="mt-4 d-flex justify-content-center gap-4">
+          
+          <div class="text-center">
+            <label class="fw-bold d-block mb-1">Step 1</label>
+            <button id="verifyBtn" class="btn btn-primary btn-lg" disabled>
+                START VERIFICATION
+            </button>
+          </div>
+
+          <div class="text-center">
+            <label class="fw-bold d-block mb-1">Step 2</label>
+            <button id="submitBtn" class="btn btn-secondary btn-lg" disabled>
+                SUBMIT DATA
+            </button>
+          </div>
+
+          <input type="hidden" id="refImagePath" value="">
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // --- 1. LISTEN FOR POPUP SUCCESS MESSAGE ---
+    window.addEventListener("message", function(event) {
+        // Check if the message is "VERIFIED"
+        if (event.data === "VERIFIED") {
+            console.log("SUCCESS: Signal received from Verification Service!");
+            
+            // 1. Disable the Verify button (Process complete)
+            const verifyBtn = document.getElementById("verifyBtn");
+            verifyBtn.disabled = true;
+            verifyBtn.innerText = "VERIFIED ✓";
+            verifyBtn.classList.remove("btn-primary", "btn-success");
+            verifyBtn.classList.add("btn-outline-success");
+
+            // 2. Enable the Submit button
+            const submitBtn = document.getElementById("submitBtn");
+            submitBtn.disabled = false;
+            submitBtn.classList.remove("btn-secondary");
+            submitBtn.classList.add("btn-success");
+        }
+    });
+
+    // --- 2. OPEN VERIFICATION POPUP ---
+    document.getElementById("verifyBtn").addEventListener("click", function() {
+        const rawPath = document.getElementById("refImagePath").value;
+        if (!rawPath) {
+            alert("Error: No reference image found. Please upload PAN Card first.");
+            return;
+        }
+        const encodedPath = encodeURIComponent(rawPath);
+        // This points to the same Verification Service (Port 5001)
+        const verificationUrl = `http://127.0.0.1:5001/liveness/popup?ref_path=${encodedPath}`;
+        
+        // Open popup
+        window.open(verificationUrl, "IdentityVerification", "width=700,height=600");
+    });
+
+    // --- 3. SUBMIT DATA TO BACKEND ---
+    document.getElementById("submitBtn").addEventListener("click", function() {
+        // Gather data from the PAN inputs
+        const formData = {
+            doc_type: "PAN", // Good practice to identify document type
+            name: document.getElementById("name").value,
+            dob: document.getElementById("dob").value,
+            father_name: document.getElementById("father").value,
+            pan_number: document.getElementById("pan").value
+        };
+
+        // Send to your Main App Python backend
+        fetch("/submit-pan-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(formData)
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.status == "success"){
+            alert(data.message);
+            window.location.href = data.redirect_url;
+          }
+          else{
+            alert("Error:"+data.message)
+          }
+        })
+        .catch(error => {
+            console.error("Submission Error:", error);
+            alert("Failed to submit data.");
+        });
+    });
+
+    // --- 4. HELPER TO FILL FORM ---
+    function fillFromBackend(data) {
+      // Populate PAN specific fields
+      document.getElementById("name").value = data.name || "";
+      document.getElementById("dob").value = data.dob || "";
+      document.getElementById("father").value = data.father || "";
+      document.getElementById("pan").value = data.pan || "";
+
+      // Handle Photo
+      if(data.photo){
+        let photoSrc = "data:image/jpeg;base64," + data.photo;
+        document.getElementById("photoPreview").innerHTML = `<img src="${photoSrc}" style="width:100%; height:100%; object-fit:cover;">`;
+      }
+
+      // Handle File Path for Verification
+      if (data.file_path) {
+          console.log("PAN Image Path received:", data.file_path);
+          document.getElementById("refImagePath").value = data.file_path;
+          document.getElementById("verifyBtn").disabled = false; // Enable verify button
+      }
+    }
+
+    // --- 5. HANDLE UPLOAD ---
+    document.getElementById("uploadForm").addEventListener("submit", function(event) {
+      event.preventDefault(); // stop page reload
+
+      let fileInput = document.getElementById("imgUpload");
+      let file = fileInput.files[0];
+
+      if (!file) {
+          alert("Please upload an image first");
+          return;
+      }
+
+      let formData = new FormData();
+      formData.append("image", file);
+
+      // Use the PAN specific upload endpoint
+      fetch("/upload-pan-image", {
+          method: "POST",
+          body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+          console.log("Backend Data:", data);
+          fillFromBackend(data);
+      })
+      .catch(error => {
+          console.error("Error:", error);
+      });
+    });
+  </script>
+
+</body>
+</html>
